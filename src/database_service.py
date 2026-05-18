@@ -168,3 +168,43 @@ class DatabaseService:
                 return cur.lastrowid
         except sqlite3.Error as exc:
             raise DatabaseError(f"upsert_device failed for {ip}: {exc}") from exc
+
+    # --- aggregate stats ---
+
+    def get_stats(self) -> dict:
+        """SQL-based aggregate statistics across all three tables."""
+        try:
+            with self._connect() as conn:
+                conn.row_factory = sqlite3.Row
+                total_packets = conn.execute("SELECT COUNT(*) FROM packets").fetchone()[0]
+                by_label = {
+                    row["label"]: row["cnt"]
+                    for row in conn.execute(
+                        "SELECT label, COUNT(*) AS cnt FROM packets GROUP BY label"
+                    ).fetchall()
+                }
+                total_anomalies = conn.execute("SELECT COUNT(*) FROM anomalies").fetchone()[0]
+                open_anomalies  = conn.execute(
+                    "SELECT COUNT(*) FROM anomalies WHERE is_resolved = 0"
+                ).fetchone()[0]
+                by_severity = {
+                    row["severity"]: row["cnt"]
+                    for row in conn.execute(
+                        "SELECT severity, COUNT(*) AS cnt FROM anomalies GROUP BY severity"
+                    ).fetchall()
+                }
+                total_devices = conn.execute("SELECT COUNT(*) FROM devices").fetchone()[0]
+                avg_pps = conn.execute(
+                    "SELECT AVG(packets_per_second) FROM packets"
+                ).fetchone()[0]
+            return {
+                "total_packets":   total_packets,
+                "by_label":        by_label,
+                "total_anomalies": total_anomalies,
+                "open_anomalies":  open_anomalies,
+                "by_severity":     by_severity,
+                "total_devices":   total_devices,
+                "avg_pps":         round(avg_pps or 0.0, 2),
+            }
+        except sqlite3.Error as exc:
+            raise DatabaseError(f"get_stats failed: {exc}") from exc
