@@ -1,5 +1,6 @@
+from functools import reduce
 from itertools import groupby
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 from src.network_packet import NetworkPacket
 
@@ -46,3 +47,31 @@ class TrafficAnalyzer:
     def anomaly_summary(self) -> Dict[str, int]:
         labels = [p.label for p in self.packets]
         return {label: labels.count(label) for label in set(labels)}
+
+    # --- reduce-based aggregations ---
+
+    def total_bytes_transferred(self) -> float:
+        """Sum of bytes_per_second across all packets using reduce."""
+        if not self.packets:
+            return 0.0
+        return reduce(lambda acc, p: acc + p.bytes_per_second, self.packets, 0.0)
+
+    def total_failed_connections(self) -> int:
+        """Sum of failed_connections across all packets using reduce."""
+        if not self.packets:
+            return 0
+        return reduce(lambda acc, p: acc + p.failed_connections, self.packets, 0)
+
+    # --- map-based transformations ---
+
+    def risk_scores(self) -> List[Tuple[str, float]]:
+        """Map each packet to (source_ip, risk_score). Score = pps*0.4 + failed*2."""
+        return list(map(
+            lambda p: (p.source_ip, round(p.packets_per_second * 0.4 + p.failed_connections * 2.0, 1)),
+            self.packets,
+        ))
+
+    def get_critical_ips(self, risk_threshold: float = 80.0) -> List[str]:
+        """Filter IPs whose risk score exceeds the threshold (filter + map combo)."""
+        scored = filter(lambda x: x[1] >= risk_threshold, self.risk_scores())
+        return sorted(set(map(lambda x: x[0], scored)))

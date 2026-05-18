@@ -52,3 +52,23 @@ class FileLogger:
             self.info(f"Exported {len(data)} records to {path}")
         except (OSError, csv.Error) as exc:
             raise FileExportError(f"CSV export failed: {exc}") from exc
+
+    def read_from_json(self, filename: str) -> List[dict]:
+        path = os.path.join(self._log_dir, filename)
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            self.info(f"Read {len(data)} records from {path}")
+            return data
+        except (OSError, json.JSONDecodeError) as exc:
+            raise FileExportError(f"JSON read failed for {filename}: {exc}") from exc
+
+    def read_from_csv(self, filename: str) -> List[dict]:
+        path = os.path.join(self._log_dir, filename)
+        try:
+            with open(path, "r", newline="", encoding="utf-8") as f:
+                rows = list(csv.DictReader(f))
+            self.info(f"Read {len(rows)} records from {path}")
+            return rows
+        except (OSError, csv.Error) as exc:
+            raise FileExportError(f"CSV read failed for {filename}: {exc}") from exc

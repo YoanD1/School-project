@@ -4,6 +4,7 @@ from datetime import datetime
 
 from src.network_packet import NetworkPacket
 from src.anomaly_detector import AnomalyDetector
+from src.model_evaluator import ModelEvaluator
 from src.traffic_analyzer import TrafficAnalyzer
 from src.event_manager import EventManager
 from src.database_service import DatabaseService
@@ -34,19 +35,24 @@ def load_csv(path: str) -> list:
 
 
 def main():
-    # Remove stale DB so each run starts clean
+    # ── setup ────────────────────────────────────────────────────────────────
     db_path = "db/network_monitor.db"
+    os.makedirs("db", exist_ok=True)
     if os.path.exists(db_path):
         os.remove(db_path)
 
-    logger = FileLogger()
-    db = DatabaseService(db_path)
-    events = EventManager()
+    logger   = FileLogger()
+    db       = DatabaseService(db_path)
+    events   = EventManager()
     detector = AnomalyDetector()
     analyzer = TrafficAnalyzer()
-    service = MonitoringService(detector, analyzer, events, db, logger)
+    service  = MonitoringService(detector, analyzer, events, db, logger)
 
-    # --- Train the detector on known-normal traffic ---
+    # ── WEEK 3 · STEP 1 — Train AI model on labeled CSV data ────────────────
+    print("\n" + "=" * 55)
+    print("  WEEK 3 — AI + Data + DB + File + Analysis")
+    print("=" * 55)
+
     logger.info("Loading sample data for training...")
     try:
         all_packets = load_csv("data/sample_traffic.csv")
@@ -60,22 +66,69 @@ def main():
         logger.error(f"Startup error: {exc}")
         return
 
-    # --- Process the full sample dataset ---
-    print("\n--- Processing sample dataset ---")
+    # ── WEEK 3 · STEP 2 — Process full labeled dataset through the pipeline ─
+    print("\n--- Processing labeled dataset (35 packets) ---")
     service.process_batch(all_packets)
 
-    # --- Live simulation (Week 3 will extend this) ---
-    print("\n--- Running live simulation (10 packets) ---")
+    # ── WEEK 3 · STEP 3 — AI Model Evaluation (real vs predicted) ───────────
+    evaluator = ModelEvaluator(detector)
+    evaluator.print_report(all_packets)
+
+    # ── WEEK 3 · STEP 4 — Live simulation (new unseen traffic) ──────────────
+    print("\n--- Running live simulation (20 packets) ---")
     simulator = TrafficSimulator()
-    live_packets = simulator.generate_batch(total=10, anomaly_ratio=0.4)
+    live_packets = simulator.generate_batch(total=20, anomaly_ratio=0.35)
     service.process_batch(live_packets)
 
-    # --- Print summary and export ---
+    # ── WEEK 3 · STEP 5 — LINQ-style analysis ───────────────────────────────
+    print("\n--- LINQ-style Analysis ---")
+
+    # list comprehension
+    high_risk = [p for p in analyzer.packets if p.packets_per_second > 200]
+    print(f"  High-risk packets (pps > 200)     : {len(high_risk)}")
+
+    # map
+    risk_scores = analyzer.risk_scores()
+    top_risks = sorted(risk_scores, key=lambda x: x[1], reverse=True)[:5]
+    print(f"  Top 5 risk scores (map)           : {top_risks}")
+
+    # filter
+    critical_ips = analyzer.get_critical_ips(risk_threshold=80.0)
+    print(f"  Critical IPs (filter, risk>=80)   : {critical_ips}")
+
+    # reduce
+    total_bps = analyzer.total_bytes_transferred()
+    total_failed = analyzer.total_failed_connections()
+    print(f"  Total bytes/s transferred (reduce): {total_bps:,.0f}")
+    print(f"  Total failed connections (reduce) : {total_failed}")
+
+    # sorted + groupby
     service.print_summary()
 
+    # ── WEEK 3 · STEP 6 — File export (JSON + CSV) ──────────────────────────
     suspicious = analyzer.get_suspicious_packets()
     logger.export_to_json([p.to_dict() for p in suspicious], "anomalies_export.json")
-    logger.export_to_csv([p.to_dict() for p in suspicious], "anomalies_export.csv")
+    logger.export_to_csv([p.to_dict() for p in suspicious],  "anomalies_export.csv")
+
+    # ── WEEK 3 · STEP 7 — Read files back and verify ────────────────────────
+    print("\n--- Reading exported files back ---")
+    json_data = logger.read_from_json("anomalies_export.json")
+    csv_data  = logger.read_from_csv("anomalies_export.csv")
+    print(f"  JSON re-read: {len(json_data)} records, first IP = {json_data[0]['source_ip'] if json_data else 'n/a'}")
+    print(f"  CSV  re-read: {len(csv_data)} records, first IP = {csv_data[0]['source_ip'] if csv_data else 'n/a'}")
+
+    # ── WEEK 3 · STEP 8 — DB query summary ──────────────────────────────────
+    print("\n--- Database query results ---")
+    all_db_packets   = db.get_all_packets()
+    open_anomalies   = db.get_open_anomalies()
+    ddos_packets     = db.get_packets_by_label("ddos")
+    suspicious_db    = db.get_packets_by_label("suspicious")
+    print(f"  Total packets in DB    : {len(all_db_packets)}")
+    print(f"  DDoS packets in DB     : {len(ddos_packets)}")
+    print(f"  Suspicious packets     : {len(suspicious_db)}")
+    print(f"  Open (unresolved) alerts: {len(open_anomalies)}")
+
+    logger.info("Week 3 run complete.")
 
 
 if __name__ == "__main__":

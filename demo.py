@@ -18,6 +18,7 @@ def show(label, value):
 
 from src.network_packet import NetworkPacket
 from src.anomaly_detector import AnomalyDetector
+from src.model_evaluator import ModelEvaluator
 from src.traffic_analyzer import TrafficAnalyzer
 from src.event_manager import EventManager, AnomalyEventArgs, DDoSEventArgs, UnusualTrafficEventArgs
 from src.database_service import DatabaseService
@@ -276,6 +277,48 @@ all_suspicious = analyzer.get_suspicious_packets()
 logger.export_to_json([p.to_dict() for p in all_suspicious], "demo_anomalies.json")
 logger.export_to_csv([p.to_dict() for p in all_suspicious],  "demo_anomalies.csv")
 show("  Files written to logs/", ["demo_anomalies.json", "demo_anomalies.csv"])
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 10. ModelEvaluator — AI accuracy report (real vs predicted)
+# ══════════════════════════════════════════════════════════════════════════════
+section("10. ModelEvaluator — accuracy & confusion matrix")
+
+evaluator = ModelEvaluator(detector)
+evaluator.print_report(packets_csv)
+
+metrics = evaluator.evaluate(packets_csv)
+show("  Overall accuracy", f"{metrics['accuracy'] * 100:.1f}%")
+for label, stats in metrics["per_class"].items():
+    show(f"  {label} recall", f"{stats['recall']:.0%}  ({stats['correct']}/{stats['total']})")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 11. TrafficAnalyzer — reduce & map methods (Week 3 additions)
+# ══════════════════════════════════════════════════════════════════════════════
+section("11. TrafficAnalyzer — reduce / map / filter")
+
+show("  total_bytes_transferred (reduce)",  f"{analyzer.total_bytes_transferred():,.0f} bytes/s")
+show("  total_failed_connections (reduce)", analyzer.total_failed_connections())
+
+top_risks = sorted(analyzer.risk_scores(), key=lambda x: x[1], reverse=True)[:5]
+show("  top 5 risk scores (map)",           top_risks)
+
+critical = analyzer.get_critical_ips(risk_threshold=80.0)
+show("  critical IPs  risk>=80 (filter)",   critical)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 12. FileLogger — read_from_json / read_from_csv
+# ══════════════════════════════════════════════════════════════════════════════
+section("12. FileLogger — read exported files back")
+
+json_rows = logger.read_from_json("demo_anomalies.json")
+csv_rows  = logger.read_from_csv("demo_anomalies.csv")
+show("  JSON rows read back",  len(json_rows))
+show("  CSV  rows read back",  len(csv_rows))
+if json_rows:
+    show("  first JSON record IP", json_rows[0]["source_ip"])
 
 
 # ══════════════════════════════════════════════════════════════════════════════
